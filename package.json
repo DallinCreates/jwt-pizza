@@ -10,7 +10,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "playwright test",
-    "test:coverage": "nyc --reporter=json-summary --reporter=text playwright test"
+    "test:coverage": "cross-env COVERAGE=true nyc --reporter=json-summary --reporter=text playwright test"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
