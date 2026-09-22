@@ -127,3 +127,57 @@ test('purchase with login', async ({ page }) => {
   // Check balance
   await expect(page.getByText('0.008')).toBeVisible();
 });
+
+test('invalid credentials shows error', async ({ page }) => {
+  await page.route('*/**/api/auth', async (route) => {
+    expect(route.request().method()).toBe('PUT');
+    await route.fulfill({ status: 401, json: { message: 'invalid credentials' } });
+  });
+
+  await page.goto('/');
+  await page.getByRole('link', { name: 'Login' }).click();
+  await page.getByRole('textbox', { name: 'Email address' }).fill('nobody@jwt.com');
+  await page.getByRole('textbox', { name: 'Password' }).fill('wrong');
+  await page.getByRole('button', { name: 'Login' }).click();
+
+  await expect(page.getByText('invalid credentials')).toBeVisible();
+});
+
+test('network failure on login shows error', async ({ page }) => {
+  await page.route('*/**/api/auth', async (route) => {
+    await route.abort('failed');
+  });
+
+  await page.goto('/');
+  await page.getByRole('link', { name: 'Login' }).click();
+  await page.getByRole('textbox', { name: 'Email address' }).fill('d@jwt.com');
+  await page.getByRole('textbox', { name: 'Password' }).fill('a');
+  await page.getByRole('button', { name: 'Login' }).click();
+
+  await expect(page.getByText('"code":500')).toBeVisible();
+});
+
+test('expired session token is cleared on load', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.setItem('token', 'stale-token'));
+
+  await page.route('*/**/api/user/me', async (route) => {
+    expect(route.request().method()).toBe('GET');
+    expect(route.request().headers()['authorization']).toBe('Bearer stale-token');
+    await route.fulfill({ status: 401, json: { message: 'unauthorized' } });
+  });
+
+  await page.goto('/');
+
+  await expect(page.getByRole('link', { name: 'Login' })).toBeVisible();
+  expect(await page.evaluate(() => window.localStorage.getItem('token'))).toBeNull();
+});
+
+test('navigate to register from login', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('link', { name: 'Login' }).click();
+
+  await page.locator('div.text-white.italic').getByText('Register').click();
+
+  await expect(page).toHaveURL(/\/register$/);
+  await expect(page.getByRole('heading', { name: 'Welcome to the party' })).toBeVisible();
+});
