@@ -2,7 +2,7 @@ import { Page } from '@playwright/test';
 import { test, expect } from 'playwright-test-coverage';
 import { Role, User } from '../src/service/pizzaService';
 
-async function basicInit(page: Page) {
+async function basicInit(page: Page, verifyFails = false) {
   let loggedInUser: User | undefined;
   const validUsers: Record<string, User> = { 'd@jwt.com': { id: '3', name: 'Kai Chen', email: 'd@jwt.com', password: 'a', roles: [{ role: Role.Diner }] } };
 
@@ -47,6 +47,10 @@ async function basicInit(page: Page) {
 
   await page.route('*/**/api/order/verify', async (route) => {
     expect(route.request().method()).toBe('POST');
+    if (verifyFails) {
+      await route.fulfill({ status: 500, json: { message: 'invalid signature' } });
+      return;
+    }
     await route.fulfill({ json: { message: 'valid', payload: { pizzas: 1 } } });
   });
 
@@ -77,6 +81,22 @@ test('delivery', async ({ page }) => {
   await page.getByRole('button', { name: 'Verify' }).click();
   await expect(page.getByRole('heading', { name: 'JWT Pizza - valid' })).toBeVisible();
   await expect(page.getByText('"pizzas": 1')).toBeVisible();
+});
+
+test('invalid jwt verification', async ({ page }) => {
+  await basicInit(page, true);
+  await orderPizza(page);
+
+  await page.getByRole('button', { name: 'Verify' }).click();
+  await expect(page.getByRole('heading', { name: 'JWT Pizza - invalid signature' })).toBeVisible();
+  await expect(page.getByText('invalid JWT. Looks like you have a bad pizza!')).toBeVisible();
+});
+
+test('delivery without an order', async ({ page }) => {
+  await page.goto('/delivery');
+
+  await expect(page.getByRole('heading', { name: 'Here is your JWT Pizza!' })).toBeVisible();
+  await expect(page.getByText('error', { exact: true })).toBeVisible();
 });
 
 test('order more', async ({ page }) => {

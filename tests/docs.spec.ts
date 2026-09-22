@@ -35,3 +35,29 @@ test('docs', async ({ page }) => {
   await expect(page.getByText('🔐 [PUT] /api/auth')).toBeVisible();
   await expect(page.getByText('Login existing user')).toBeVisible();
 });
+
+test('factory docs', async ({ page }) => {
+  await page.route('*/**/api/docs', async (route) => {
+    expect(route.request().method()).toBe('GET');
+    await route.fulfill({
+      json: {
+        endpoints: [
+          {
+            requiresAuth: false,
+            method: 'POST',
+            path: '/api/order/verify',
+            description: 'Verify an order JWT',
+            example: `curl -X POST localhost:3000/api/order/verify -d '{"jwt":"eyJpYXQ"}'`,
+            response: { message: 'valid', payload: { pizzas: 1 } },
+          },
+        ],
+      },
+    });
+  });
+
+  await page.goto('/docs/factory');
+
+  await expect(page.getByRole('heading', { name: 'JWT Pizza API' })).toBeVisible();
+  await expect(page.getByText('[POST] /api/order/verify')).toBeVisible();
+  await expect(page.getByText('Verify an order JWT')).toBeVisible();
+});
