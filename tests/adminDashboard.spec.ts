@@ -5,10 +5,16 @@ import { Role, User } from '../src/service/pizzaService';
 async function basicInit(page: Page) {
   let loggedInUser: User | undefined;
   const admin: User = { id: '1', name: 'Admin Dude', email: 'a@jwt.com', password: 'admin', roles: [{ role: Role.Admin }] };
-  const users: User[] = [
-    { id: '3', name: 'Kai Chen', email: 'd@jwt.com', roles: [{ role: Role.Diner }] },
-    { id: '5', name: 'Buddy', email: 'b@jwt.com', roles: [{ role: Role.Admin }] },
-  ];
+  const userPages: Record<string, { users: User[]; more: boolean }> = {
+    '1': {
+      users: [
+        { id: '3', name: 'Kai Chen', email: 'd@jwt.com', roles: [{ role: Role.Diner }] },
+        { id: '5', name: 'Buddy', email: 'b@jwt.com', roles: [{ role: Role.Admin }] },
+      ],
+      more: true,
+    },
+    '2': { users: [{ id: '7', name: 'Zed Last', email: 'z@jwt.com', roles: [{ role: Role.Diner }] }], more: false },
+  };
   const listUsersRequests: URL[] = [];
 
   await page.route('*/**/api/auth', async (route) => {
@@ -28,8 +34,9 @@ async function basicInit(page: Page) {
 
   await page.route(/\/api\/user(\?.*)?$/, async (route) => {
     expect(route.request().method()).toBe('GET');
-    listUsersRequests.push(new URL(route.request().url()));
-    await route.fulfill({ json: { users, more: false } });
+    const url = new URL(route.request().url());
+    listUsersRequests.push(url);
+    await route.fulfill({ json: userPages[url.searchParams.get('page')!] ?? { users: [], more: false } });
   });
 
   await page.route(/\/api\/franchise(\?.*)?$/, async (route) => {
@@ -80,4 +87,26 @@ test('admin dashboard does not load users for a non-admin', async ({ page }) => 
   await expect(page.getByRole('heading', { name: 'Oops' })).toBeVisible();
   await page.waitForLoadState('networkidle');
   expect(listUsersRequests).toEqual([]);
+});
+
+test('admin pages through users', async ({ page }) => {
+  const { listUsersRequests } = await basicInit(page);
+
+  const previousButton = page.getByRole('button', { name: 'Previous users page' });
+  const nextButton = page.getByRole('button', { name: 'Next users page' });
+
+  await expect(page.getByRole('row', { name: /Kai Chen/ })).toBeVisible();
+  await expect(previousButton).toBeDisabled();
+  await expect(nextButton).toBeEnabled();
+
+  await nextButton.click();
+  await expect(page.getByRole('row', { name: /Zed Last/ })).toBeVisible();
+  await expect(page.getByRole('row', { name: /Kai Chen/ })).toBeHidden();
+  expect(listUsersRequests.at(-1)!.searchParams.get('page')).toBe('2');
+  await expect(nextButton).toBeDisabled();
+  await expect(previousButton).toBeEnabled();
+
+  await previousButton.click();
+  await expect(page.getByRole('row', { name: /Kai Chen/ })).toBeVisible();
+  expect(listUsersRequests.at(-1)!.searchParams.get('page')).toBe('1');
 });
