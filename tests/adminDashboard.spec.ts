@@ -36,6 +36,13 @@ async function basicInit(page: Page) {
     expect(route.request().method()).toBe('GET');
     const url = new URL(route.request().url());
     listUsersRequests.push(url);
+    const nameFilter = url.searchParams.get('name') ?? '*';
+    if (nameFilter !== '*') {
+      const term = nameFilter.replace(/\*/g, '');
+      const allUsers = Object.values(userPages).flatMap((p) => p.users);
+      await route.fulfill({ json: { users: allUsers.filter((u) => u.name!.includes(term)), more: false } });
+      return;
+    }
     await route.fulfill({ json: userPages[url.searchParams.get('page')!] ?? { users: [], more: false } });
   });
 
@@ -109,4 +116,23 @@ test('admin pages through users', async ({ page }) => {
   await previousButton.click();
   await expect(page.getByRole('row', { name: /Kai Chen/ })).toBeVisible();
   expect(listUsersRequests.at(-1)!.searchParams.get('page')).toBe('1');
+});
+
+test('admin filters users by name', async ({ page }) => {
+  const { listUsersRequests } = await basicInit(page);
+
+  // Start on page 2 so we can see that filtering goes back to page 1.
+  await page.getByRole('button', { name: 'Next users page' }).click();
+  await expect(page.getByRole('row', { name: /Zed Last/ })).toBeVisible();
+
+  await page.getByRole('textbox', { name: 'Filter users' }).fill('Kai');
+  await page.getByRole('button', { name: 'Submit user filter' }).click();
+
+  await expect(page.getByRole('row', { name: /Kai Chen/ })).toBeVisible();
+  await expect(page.getByRole('row', { name: /Buddy/ })).toBeHidden();
+  await expect(page.getByRole('row', { name: /Zed Last/ })).toBeHidden();
+
+  const filterRequest = listUsersRequests.at(-1)!;
+  expect(filterRequest.searchParams.get('name')).toBe('*Kai*');
+  expect(filterRequest.searchParams.get('page')).toBe('1');
 });
