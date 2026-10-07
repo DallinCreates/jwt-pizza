@@ -1,0 +1,56 @@
+name: Test S3 Deploy
+
+# Smoke test for the OIDC -> S3 -> CloudFront path. Writes a placeholder
+# index.html under the pizza.dallinking.com/ prefix of the shared bucket, so
+# it is manual-only: on push it would race ci-cloudfront.yml and clobber the
+# real index.html. Re-run ci-cloudfront.yml afterwards to restore the site.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write # Required for requesting the JWT
+  contents: read  # Required for actions/checkout
+
+concurrency:
+  group: static-deploy-pizza.dallinking.com
+  cancel-in-progress: false
+
+env:
+  S3_PREFIX: pizza.dallinking.com
+
+jobs:
+  deploy-s3:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create OIDC token to AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          audience: sts.amazonaws.com
+          aws-region: us-east-1
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT }}:role/${{ secrets.CI_IAM_ROLE }}
+
+      - name: Push to AWS S3
+        env:
+          B: ${{ secrets.APP_BUCKET }}
+          P: ${{ env.S3_PREFIX }}
+          DIST: ${{ secrets.DISTRIBUTION_ID }}
+        run: |
+          set -euo pipefail
+          mkdir dist
+          printf "<h1>CloudFront deployment with GitHub Actions</h1>" > dist/index.html
+          # Shared bucket: only ever write under the pizza prefix.
+          aws s3 cp dist "s3://$B/$P/" --recursive --cache-control "no-cache"
+
+          # dt_* is a multi-tenant distribution tenant (tenant-scoped API);
+          # a plain E... id uses the classic API.
+          if [ "${DIST#dt_}" != "$DIST" ]; then
+            aws cloudfront create-invalidation-for-distribution-tenant \
+              --id "$DIST" \
+              --invalidation-batch "Paths={Quantity=1,Items=[/*]},CallerReference=test-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          else
+            aws cloudfront create-invalidation --distribution-id "$DIST" --paths "/*"
+          fi
