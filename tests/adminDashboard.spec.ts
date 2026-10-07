@@ -46,6 +46,17 @@ async function basicInit(page: Page) {
     await route.fulfill({ json: userPages[url.searchParams.get('page')!] ?? { users: [], more: false } });
   });
 
+  const deletedUserIds: string[] = [];
+  await page.route(/\/api\/user\/\d+$/, async (route) => {
+    expect(route.request().method()).toBe('DELETE');
+    const userId = route.request().url().split('/').pop()!;
+    deletedUserIds.push(userId);
+    for (const userPage of Object.values(userPages)) {
+      userPage.users = userPage.users.filter((u) => u.id !== userId);
+    }
+    await route.fulfill({ json: { message: 'user deleted' } });
+  });
+
   await page.route(/\/api\/franchise(\?.*)?$/, async (route) => {
     await route.fulfill({ json: { franchises: [], more: false } });
   });
@@ -58,7 +69,7 @@ async function basicInit(page: Page) {
   await page.getByRole('button', { name: 'Login' }).click();
   await page.getByRole('link', { name: 'Admin' }).click();
 
-  return { listUsersRequests };
+  return { listUsersRequests, deletedUserIds };
 }
 
 test('admin dashboard lists users', async ({ page }) => {
@@ -135,4 +146,15 @@ test('admin filters users by name', async ({ page }) => {
   const filterRequest = listUsersRequests.at(-1)!;
   expect(filterRequest.searchParams.get('name')).toBe('*Kai*');
   expect(filterRequest.searchParams.get('page')).toBe('1');
+});
+
+test('admin deletes a user', async ({ page }) => {
+  const { deletedUserIds } = await basicInit(page);
+
+  const buddyRow = page.getByRole('row', { name: /Buddy/ });
+  await buddyRow.getByRole('button', { name: 'Delete' }).click();
+
+  await expect(page.getByRole('row', { name: /Buddy/ })).toBeHidden();
+  await expect(page.getByRole('row', { name: /Kai Chen/ })).toBeVisible();
+  expect(deletedUserIds).toEqual(['5']);
 });
