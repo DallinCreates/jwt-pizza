@@ -75,7 +75,7 @@ test('delivery', async ({ page }) => {
   await orderPizza(page);
 
   await expect(page.getByRole('heading', { name: 'Here is your JWT Pizza!' })).toBeVisible();
-  await expect(page.getByText('23')).toBeVisible();
+  await expect(page.getByText('23', { exact: true })).toBeVisible();
   await expect(page.getByText('eyJpYXQ')).toBeVisible();
 
   await page.getByRole('button', { name: 'Verify' }).click();
