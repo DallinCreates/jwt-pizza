@@ -120,13 +120,13 @@ test('admin pages through users', async ({ page }) => {
   await nextButton.click();
   await expect(page.getByRole('row', { name: /Zed Last/ })).toBeVisible();
   await expect(page.getByRole('row', { name: /Kai Chen/ })).toBeHidden();
-  expect(listUsersRequests.at(-1)!.searchParams.get('page')).toBe('2');
+  expect(listUsersRequests[listUsersRequests.length - 1].searchParams.get('page')).toBe('2');
   await expect(nextButton).toBeDisabled();
   await expect(previousButton).toBeEnabled();
 
   await previousButton.click();
   await expect(page.getByRole('row', { name: /Kai Chen/ })).toBeVisible();
-  expect(listUsersRequests.at(-1)!.searchParams.get('page')).toBe('1');
+  expect(listUsersRequests[listUsersRequests.length - 1].searchParams.get('page')).toBe('1');
 });
 
 test('admin filters users by name', async ({ page }) => {
@@ -143,7 +143,7 @@ test('admin filters users by name', async ({ page }) => {
   await expect(page.getByRole('row', { name: /Buddy/ })).toBeHidden();
   await expect(page.getByRole('row', { name: /Zed Last/ })).toBeHidden();
 
-  const filterRequest = listUsersRequests.at(-1)!;
+  const filterRequest = listUsersRequests[listUsersRequests.length - 1];
   expect(filterRequest.searchParams.get('name')).toBe('*Kai*');
   expect(filterRequest.searchParams.get('page')).toBe('1');
 });
