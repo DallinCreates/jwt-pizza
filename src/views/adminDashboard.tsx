@@ -25,14 +25,21 @@ export default function AdminDashboard(props: Props) {
 
   const [userList, setUserList] = React.useState<UserList>({ users: [], more: false });
   const [userPage, setUserPage] = React.useState(1);
+  const [userFilter, setUserFilter] = React.useState('*');
+  const filterUserRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     (async () => {
       if (Role.isRole(props.user, Role.Admin)) {
-        setUserList(await pizzaService.getUsers(userPage, 10, '*'));
+        setUserList(await pizzaService.getUsers(userPage, 10, userFilter));
       }
     })();
-  }, [props.user, userPage]);
+  }, [props.user, userPage, userFilter]);
+
+  function filterUsers() {
+    setUserFilter(`*${filterUserRef.current?.value}*`);
+    setUserPage(1);
+  }
 
   function createFranchise() {
     navigate('/admin-dashboard/create-franchise');
@@ -162,7 +169,13 @@ export default function AdminDashboard(props: Props) {
                       </tbody>
                       <tfoot>
                         <tr>
-                          <td colSpan={3} className="text-end text-sm font-medium">
+                          <td className="px-1 py-1">
+                            <input type="text" ref={filterUserRef} name="filterUser" placeholder="Filter users" className="px-2 py-1 text-sm border border-gray-300 rounded-lg" />
+                            <button type="submit" aria-label="Submit user filter" className="ml-2 px-2 py-1 text-sm font-semibold rounded-lg border border-orange-400 text-orange-400 hover:border-orange-800 hover:text-orange-800" onClick={filterUsers}>
+                              Submit
+                            </button>
+                          </td>
+                          <td colSpan={2} className="text-end text-sm font-medium">
                             <button aria-label="Previous users page" className="w-12 p-1 text-sm font-semibold rounded-lg border border-transparent bg-white text-grey border-grey m-1 hover:bg-orange-200 disabled:bg-neutral-300 " onClick={() => setUserPage(userPage - 1)} disabled={userPage <= 1}>
                               «
                             </button>
