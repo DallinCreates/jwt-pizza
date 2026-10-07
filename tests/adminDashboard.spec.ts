@@ -64,3 +64,20 @@ test('admin dashboard lists users', async ({ page }) => {
   expect(listUsersRequests[0].searchParams.get('limit')).toBe('10');
   expect(listUsersRequests[0].searchParams.get('name')).toBe('*');
 });
+
+test('admin dashboard does not load users for a non-admin', async ({ page }) => {
+  const listUsersRequests: string[] = [];
+  await page.route(/\/api\/user(\?.*)?$/, async (route) => {
+    listUsersRequests.push(route.request().url());
+    await route.fulfill({ status: 401, json: { message: 'unauthorized' } });
+  });
+  await page.route(/\/api\/franchise(\?.*)?$/, async (route) => {
+    await route.fulfill({ json: { franchises: [], more: false } });
+  });
+
+  await page.goto('/admin-dashboard');
+
+  await expect(page.getByRole('heading', { name: 'Oops' })).toBeVisible();
+  await page.waitForLoadState('networkidle');
+  expect(listUsersRequests).toEqual([]);
+});
