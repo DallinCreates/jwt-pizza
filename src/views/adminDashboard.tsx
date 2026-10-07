@@ -27,7 +27,9 @@ export default function AdminDashboard(props: Props) {
 
   React.useEffect(() => {
     (async () => {
-      setUserList(await pizzaService.getUsers(1, 10, '*'));
+      if (Role.isRole(props.user, Role.Admin)) {
+        setUserList(await pizzaService.getUsers(1, 10, '*'));
+      }
     })();
   }, [props.user]);
 
