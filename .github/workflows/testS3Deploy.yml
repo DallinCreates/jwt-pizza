@@ -31,13 +31,13 @@ jobs:
         with:
           audience: sts.amazonaws.com
           aws-region: us-east-1
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT }}:role/${{ secrets.CI_IAM_ROLE }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
 
       - name: Push to AWS S3
         env:
-          B: ${{ secrets.APP_BUCKET }}
+          B: ${{ vars.SITE_S3_BUCKET }}
           P: ${{ env.S3_PREFIX }}
-          DIST: ${{ secrets.DISTRIBUTION_ID }}
+          DIST: ${{ vars.SITE_CLOUDFRONT_ID }}
         run: |
           set -euo pipefail
           mkdir dist
