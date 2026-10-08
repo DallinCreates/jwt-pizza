@@ -1,10 +1,26 @@
 name: CI Pipeline
 
+# Builds and tests the frontend, then deploys dist/ to the shared
+# dallinking.com S3 bucket under the pizza.dallinking.com/ key prefix and
+# invalidates the CloudFront distribution in front of it. AWS access is via
+# OIDC (no long-lived keys), assuming a role scoped to this bucket/distribution.
+#
+# Repository configuration (Settings -> Secrets and variables -> Actions):
+#   Secrets:   AWS_DEPLOY_ROLE_ARN, NET_ID, FACTORY_API_KEY
+#   Variables: SITE_S3_BUCKET, SITE_CLOUDFRONT_ID (E... id or dt_... tenant id)
+#
+# ci-pages.yml is the original GitHub Pages pipeline, kept as a manual backup.
+
 on:
   push:
     branches:
       - main
   workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  S3_PREFIX: pizza.dallinking.com
+
 jobs:
   build:
     name: Build
@@ -30,7 +46,6 @@ jobs:
       - name: Build
         run: |
           npm ci && npm run build
-          cp dist/index.html dist/404.html
 
       - name: Run tests
         run: |
@@ -42,21 +57,110 @@ jobs:
           coverage=$(jq '.total.lines.pct' coverage/coverage-summary.json)
           color=$(echo "$coverage < 80" | bc | awk '{if ($1) print "red"; else print "green"}')
           curl -s -X POST "https://pizza-factory.cs329.click/api/badge/${{ secrets.NET_ID }}/jwtpizzacoverage?label=Coverage&value=$coverage%25&color=$color" -H "authorization: bearer ${{ secrets.FACTORY_API_KEY }}"
-      
-      - name: Update pages artifact
-        uses: actions/upload-pages-artifact@v3
+
+      - name: Update dist artifact
+        uses: actions/upload-artifact@v4
         with:
+          name: package
           path: dist/
+          if-no-files-found: error
+
   deploy:
+    name: Deploy to CloudFront
     needs: build
     permissions:
-      pages: write
       id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      contents: read
     runs-on: ubuntu-latest
+    concurrency:
+      group: static-deploy-pizza.dallinking.com
+      cancel-in-progress: false
+    env:
+      version: ${{ needs.build.outputs.version }}
     steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Validate configuration
+        env:
+          B: ${{ vars.SITE_S3_BUCKET }}
+          DIST: ${{ vars.SITE_CLOUDFRONT_ID }}
+        run: |
+          missing=
+          [ -z "$B" ] && missing="$missing SITE_S3_BUCKET"
+          [ -z "$DIST" ] && missing="$missing SITE_CLOUDFRONT_ID"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository Variable(s):$missing. Set them under Settings -> Secrets and variables -> Actions -> Variables."
+            exit 1
+          fi
+
+      - name: Create OIDC token to AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          audience: sts.amazonaws.com
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: package
+          path: dist/
+
+      - name: Push to AWS S3
+        env:
+          B: ${{ vars.SITE_S3_BUCKET }}
+          P: ${{ env.S3_PREFIX }}
+        run: |
+          set -euo pipefail
+          echo "Deploying $version"
+          # The bucket is shared with other dallinking.com sites, so every
+          # write (and every --delete) is scoped to the pizza prefix.
+          if [ -z "$P" ]; then
+            echo "::error::S3_PREFIX is empty; refusing to sync to the bucket root of a shared bucket."
+            exit 1
+          fi
+          DEST="s3://$B/$P"
+
+          # Hashed, immutable assets.
+          aws s3 sync dist/assets/ "$DEST/assets/" --delete \
+            --cache-control "public, max-age=31536000, immutable"
+
+          # Everything else (images, ...). The HTML shells and version.json
+          # are uploaded separately below with no-cache.
+          aws s3 sync dist/ "$DEST/" --delete \
+            --exclude "assets/*" \
+            --exclude "index.html" \
+            --exclude "app-shell.html" \
+            --exclude "version.json" \
+            --cache-control "public, max-age=300"
+
+          aws s3 cp dist/version.json "$DEST/version.json" \
+            --cache-control "no-cache" --content-type "application/json"
+
+          # CloudFront's 403/404 custom error responses serve the SPA shell so
+          # react-router handles deep links on refresh (replaces GitHub Pages'
+          # 404.html). app-shell.html is that fallback; index.html is "/".
+          aws s3 cp dist/index.html "$DEST/app-shell.html" \
+            --cache-control "no-cache" --content-type "text/html; charset=utf-8"
+          aws s3 cp dist/index.html "$DEST/index.html" \
+            --cache-control "no-cache" --content-type "text/html; charset=utf-8"
+
+      - name: Invalidate CloudFront
+        env:
+          DIST: ${{ vars.SITE_CLOUDFRONT_ID }}
+        run: |
+          set -euo pipefail
+          # A wildcard counts as one invalidation path for billing.
+          PATHS=("/*")
+
+          # dt_* is a multi-tenant distribution tenant (tenant-scoped API);
+          # a plain E... id uses the classic API.
+          if [ "${DIST#dt_}" != "$DIST" ]; then
+            ITEMS=$(printf '%s,' "${PATHS[@]}")
+            ITEMS="[${ITEMS%,}]"
+            aws cloudfront create-invalidation-for-distribution-tenant \
+              --id "$DIST" \
+              --invalidation-batch "Paths={Quantity=${#PATHS[@]},Items=$ITEMS},CallerReference=deploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          else
+            aws cloudfront create-invalidation \
+              --distribution-id "$DIST" \
+              --paths "${PATHS[@]}"
+          fi
