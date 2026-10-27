@@ -164,3 +164,29 @@ jobs:
               --distribution-id "$DIST" \
               --paths "${PATHS[@]}"
           fi
+
+  release:
+    name: Release
+    needs:
+      - build
+      - deploy
+    # Creating a tag and release requires write access to repo contents.
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create Release
+        # Pinned to a reviewed commit SHA rather than a mutable version tag.
+        uses: ncipollo/release-action@2c591bcc8ecdcd2db72b97d6147f871fcd833ba5
+        env:
+          version: ${{ needs.build.outputs.version }}
+        with:
+          tag: version-${{ env.version }}
+          name: Version ${{ env.version }}
+          makeLatest: true
+          body: |
+            ## 🚀 Changes
+
+            ${{ github.event.head_commit.message }}
+
+            **commit**: ${{ github.sha }}
