@@ -10,23 +10,23 @@ While working on JWT Pizza, I kept noticing how different its testing tools are 
 - An orchestration usually runs as part of a full integration flow. It might pull files from AWS, read integration configuration, transform data, and write output. Testing one small change the normal way means running that entire flow with real files.
 - Small logic changes are easy to break and hard to notice when they're buried inside a large process.
 
-That made me curious whether I could get real unit and regression testing on a low-code platform that was not designed for it. It is basically the same testing problem we have been working on in this course, except I do not control the runtime or the tooling.
+That made me curious whether I could get real unit and regression testing on a low-code platform that wasn't designed for it. It's basically the same testing problem we've been working on in this course, except I don't control the runtime or the tooling.
 
 ## 2. How I researched the topic
 
-I started by searching for ways other people test Workday orchestrations. I found a few people doing similar things, but I could not find one standard approach that everyone follows. I also read Workday's documentation and training material to make sure I was not overlooking a testing feature. The only built-in option I found was the debugger.
+I started by searching for ways other people test Workday orchestrations. I found a few people doing similar things, but I couldn't find one standard approach that everyone follows. I also read Workday's documentation and training material to make sure I wasn't overlooking a testing feature. The only built-in option I found was the debugger.
 
 Most of my research ended up being hands-on. I built the idea in a development tenant, ran it, deliberately broke it, and ran it again to see what the result would look like. I also talked it through with a few people I work with. We agreed that the approach would be useful, especially if we use the same naming and structure for every test. I settled on names beginning with `Test_*`, the same basic layout for each test, and `Continue on Conditions` for assertions.
 
 ## 3. Current state of the art
 
-Workday Orchestrate has a **debugger** that lets you step through an orchestration and inspect its values. I have found it useful when I already know something is wrong and I am trying to find the cause, but it does not replace automated testing:
+Workday Orchestrate has a **debugger** that lets you step through an orchestration and inspect its values. I've found it useful when I already know something is wrong and I'm trying to find the cause, but it doesn't replace automated testing:
 
 - It's not always practical for a **full integration**, which pulls files from external systems and runs many steps.
 - It's hard to use for **small pieces that need a document or other large input**, because you first have to get that input into the orchestration.
 - It doesn't give you **repeatable test cases**. There's no way to save known input and expected output, rerun them after every change, and get a pass/fail result.
 
-I also could not find a third-party testing framework for Workday orchestrations. As far as I could tell, the debugger is the best tool currently available. If I wanted repeatable unit or regression tests, I would have to build them out of the pieces Orchestrate already provides. That is what I tried to do.
+I also couldn't find a third-party testing framework for Workday orchestrations. As far as I could tell, the debugger is the best tool currently available. If I wanted repeatable unit or regression tests, I would have to build them out of the pieces Orchestrate already provides. That's what I tried to do.
 
 ## 4. Experiments
 
@@ -47,7 +47,7 @@ Test_Add (top-level, run by an integration system)
 - **Sub-orchestrations** hold the logic. In a real integration there are several of them (getting documents, reading configuration, modifying or removing records). In this walkthrough there's one: `Add`.
 - **`Test_*` orchestrations** are additional top-level orchestrations. Each one is a test case that calls a single sub-orchestration with fixed input and checks the output.
 
-Because a sub-orchestration does not care where its input came from, I can give it simple test values instead of making it read a real file from AWS. This is similar to dependency injection or mocking in regular code: separate the logic from the input and output so I can test that logic by itself.
+Because a sub-orchestration doesn't care where its input came from, I can give it simple test values instead of making it read a real file from AWS. This is similar to dependency injection or mocking in regular code: separate the logic from the input and output so I can test that logic by itself.
 
 Each test orchestration follows the **Arrange, Act, Assert** pattern used by unit testing frameworks like Jest:
 
@@ -110,7 +110,7 @@ For this report, I used a small example that does not include any confidential i
 
 ![Map Create Values into Add](curiosityImages/step10-map-add-inputs.png)
 
-At this point, the process runs from `Main` to `Main_Process` to `Add`, but that only proves that it runs. It does not prove that `Add` gives the right answer. If it were subtracting instead of adding, that mistake could be buried among all the other steps in a real integration. I needed a way to test `Add` by itself.
+At this point, the process runs from `Main` to `Main_Process` to `Add`, but that only proves that it runs. It doesn't prove that `Add` gives the right answer. If it were subtracting instead of adding, that mistake could be buried among all the other steps in a real integration. I needed a way to test `Add` by itself.
 
 #### Writing the test
 
@@ -204,7 +204,7 @@ sum = math.plus(start.Digit1, [start.Digit2, 1])
 
 This is a small change, but it is exactly the kind of mistake that could be hard to notice in a large integration. With the same inputs, `Add` now returned **4** instead of **3**.
 
-I saved the app to App Hub, updated it in the tenant, and launched the same integration system again. I did not change the test. This time, the run ended with **Completed With Errors** and showed one message:
+I saved the app to App Hub, updated it in the tenant, and launched the same integration system again. I didn't change the test. This time, the run ended with **Completed With Errors** and showed one message:
 
 ![Failing test](curiosityImages/result-fail.png)
 
@@ -212,25 +212,25 @@ I saved the app to App Hub, updated it in the tenant, and launched the same inte
 Completed with error: Add Sub Orchestration doesn't compute sum @[Test_Add.ContinueonConditions]
 ```
 
-The message told me which assertion failed and where it stopped. One weakness is that it did not show the actual and expected values, so I could not see 4 versus 3 in the message itself. I could improve that later by using **Add Integration Message** steps to log both values.
+The message told me which assertion failed and where it stopped. One weakness is that it didn't show the actual and expected values, so I couldn't see 4 versus 3 in the message itself. I could improve that later by using **Add Integration Message** steps to log both values.
 
 The important part was that the test caught the regression without running the full process or touching any files. I removed the extra `1`, redeployed the app, and ran the test one more time. It passed again with **Completed** and 0 messages.
 
 ## 5. What I learned
 
-- **Testability comes from how I design the orchestration.** Workday did not provide a testing framework, but I could still make the logic testable by putting it in sub-orchestrations with clear inputs and outputs. I saw the same idea in JWT Pizza: logic is harder to test when it is mixed together with file access, network calls, or other I/O.
+- **Testability comes from how I design the orchestration.** Workday didn't provide a testing framework, but I could still make the logic testable by putting it in sub-orchestrations with clear inputs and outputs. I saw the same idea in JWT Pizza: logic is harder to test when it's mixed together with file access, network calls, or other I/O.
 - **The testing patterns from class still apply.** At first, testing in Orchestrate seemed completely different from testing JavaScript. Once I mapped Arrange, Act, and Assert to Create Values, Call Sub-orchestration, and Continue on Conditions, it started to make sense.
-- **I do not need the whole integration to test one piece.** Pulling files from AWS and running every external step would make each test slow and difficult to control. The isolated test took about four seconds and gave me the same result every time. I would still use separate end-to-end tests for the full integration.
-- **The regression test did what I wanted it to do.** I did not change `Test_Add` at all. It passed with the correct code, failed when I introduced the bug, and passed again after I fixed it.
+- **I don't need the whole integration to test one piece.** Pulling files from AWS and running every external step would make each test slow and difficult to control. The isolated test took about four seconds and gave me the same result every time. I would still use separate end-to-end tests for the full integration.
+- **The regression test did what I wanted it to do.** I didn't change `Test_Add` at all. It passed with the correct code, failed when I introduced the bug, and passed again after I fixed it.
 - **This approach still has limitations:**
   - One integration launch runs one test, and switching tests means editing the Orchestration Name attribute.
   - Every code change has to be saved to App Hub and redeployed to the tenant before it can be tested, which is much slower than rerunning `npm test`.
   - Results are read from Process Messages, not a test report with a pass/fail summary, and the failure message doesn't show the actual value unless you log it yourself.
   - The tests can't run in a CI pipeline the way our GitHub Actions tests do.
 - **A shared standard is important.** A few other people had tried similar ideas, but there was no consistent way to name or build the tests. If my team uses the same naming, structure, and assertion method, the tests will be much easier for everyone to understand and reuse.
-- **I was surprised Workday does not already support this.** Orchestrate is used to build important integrations, so I expected it to have more support for repeatable automated testing. For now, we have to build around that missing feature.
+- **I was surprised Workday doesn't already support this.** Orchestrate is used to build important integrations, so I expected it to have more support for repeatable automated testing. For now, we have to build around that missing feature.
 
-My biggest takeaway is that designing for testing also produces better orchestrations. The pieces are smaller, their inputs and outputs are clearer, and each one has a specific job. More importantly, I do not have to make a change and simply hope I did not break something elsewhere. I can run a test and find out.
+My biggest takeaway is that designing for testing also produces better orchestrations. The pieces are smaller, their inputs and outputs are clearer, and each one has a specific job. More importantly, I don't have to make a change and simply hope I didn't break something elsewhere. I can run a test and find out.
 
 ## Sources
 
